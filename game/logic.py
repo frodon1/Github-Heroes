@@ -229,7 +229,11 @@ def handle_victory(player: Player, enemy: Enemy, loot_quality: int = 1, combat_c
     if enemy.is_boss:
         PlayerStatsRepository.increment_stat(player.id, "bosses_defeated", 1)
     
-    loot = generate_loot(enemy, loot_quality)
+    # Only generate loot 20% of the time (1 in 5 chance)
+    loot = None
+    if random.random() < 0.2:
+        loot = generate_loot(enemy, loot_quality)
+    
     achievement_context = {}
     
     if loot:

@@ -58,6 +58,10 @@ class RecyclerDialog(QDialog):
         # Buttons
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
+
+        recycle_all_btn = QPushButton("Recycle All")
+        recycle_all_btn.clicked.connect(self.recycle_all)
+        buttons_layout.addWidget(recycle_all_btn)
         
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
@@ -78,14 +82,15 @@ class RecyclerDialog(QDialog):
         inventory = ItemRepository.get_player_inventory(game_state.current_player.id)
         
         for item, quantity, equipped in inventory:
+            # Only show items that are not equipped
+            if equipped:
+                continue
+            
             row = self.inventory_table.rowCount()
             self.inventory_table.insertRow(row)
             
-            # Name (with equipped indicator)
-            name_text = item.name
-            if equipped:
-                name_text += " [EQUIPPED]"
-            self.inventory_table.setItem(row, 0, QTableWidgetItem(name_text))
+            # Name
+            self.inventory_table.setItem(row, 0, QTableWidgetItem(item.name))
             
             # Rarity
             self.inventory_table.setItem(row, 1, QTableWidgetItem(item.rarity))
@@ -122,13 +127,42 @@ class RecyclerDialog(QDialog):
         game_state = get_game_state()
         if not game_state.current_player:
             return
-        
-        # Get item to calculate XP value
-        item = ItemRepository.get_by_id(item_id)
-        if not item:
+
+        # Delegate to shared recycle logic
+        self._recycle_items([(item_id, quantity)], show_per_item_message=True)
+
+    def recycle_all(self):
+        """Recycle all non-equipped items in the inventory."""
+        game_state = get_game_state()
+        if not game_state.current_player:
             return
         
-        # Calculate XP reward based on rarity
+        inventory = ItemRepository.get_player_inventory(game_state.current_player.id)
+        # Build list of (item_id, quantity) for non-equipped items
+        items_to_recycle = [
+            (item.id, quantity) for item, quantity, equipped in inventory if not equipped
+        ]
+        
+        if not items_to_recycle:
+            QMessageBox.information(self, "Recycler", "No non-equipped items to recycle.")
+            return
+        
+        self._recycle_items(items_to_recycle, show_per_item_message=False)
+
+    def _recycle_items(self, items: list[tuple[int, int]], show_per_item_message: bool = False):
+        """
+        Core recycle logic.
+        items: list of (item_id, quantity) tuples.
+        show_per_item_message: whether to show a message per item or a single summary.
+        """
+        game_state = get_game_state()
+        if not game_state.current_player:
+            return
+        
+        from game.logic import award_xp
+        from data.repositories import PlayerRepository
+        
+        # XP values by rarity
         rarity_xp = {
             "common": 5,
             "uncommon": 10,
@@ -136,24 +170,47 @@ class RecyclerDialog(QDialog):
             "epic": 50,
             "legendary": 100
         }
-        xp_reward = rarity_xp.get(item.rarity, 5) * quantity
         
-        # Remove from inventory
-        ItemRepository.remove_from_inventory(game_state.current_player.id, item_id, quantity)
+        total_xp = 0
+        total_items = 0
+        messages = []
         
-        # Award XP
-        from game.logic import award_xp
-        from data.repositories import PlayerRepository
-        old_level = game_state.current_player.level
-        leveled_up = award_xp(game_state.current_player, xp_reward)
-        PlayerRepository.update(game_state.current_player)
+        for item_id, quantity in items:
+            item = ItemRepository.get_by_id(item_id)
+            if not item or quantity <= 0:
+                continue
+            
+            xp_reward = rarity_xp.get(item.rarity, 5) * quantity
+            
+            # Remove from inventory
+            removed = ItemRepository.remove_from_inventory(game_state.current_player.id, item_id, quantity)
+            if not removed:
+                continue
+            
+            total_xp += xp_reward
+            total_items += quantity
+            if show_per_item_message:
+                messages.append(f"Sold {quantity}x {item.name} for {xp_reward} XP!")
+        
+        leveled_up = False
+        if total_xp > 0:
+            old_level = game_state.current_player.level
+            leveled_up = award_xp(game_state.current_player, total_xp)
+            PlayerRepository.update(game_state.current_player)
         
         # Refresh display
         self.refresh_inventory()
         
-        # Show message
-        message = f"Sold {quantity}x {item.name} for {xp_reward} XP!"
-        QMessageBox.information(self, "Item Sold", message)
+        # Show messages
+        if show_per_item_message and messages:
+            # Show last message (or you could join them)
+            QMessageBox.information(self, "Item Sold", messages[-1])
+        elif not show_per_item_message and total_items > 0:
+            QMessageBox.information(
+                self,
+                "Items Recycled",
+                f"Recycled {total_items} items for {total_xp} XP!"
+            )
         
         # Show level-up popup if player leveled up
         if leveled_up:
