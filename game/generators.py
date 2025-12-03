@@ -301,22 +301,17 @@ def generate_dungeon_rooms(tree_entries: List, world_id: int, stars: int, health
         if 'doc' in room.zone_name.lower() or 'docs' in room.zone_name.lower():
             room.danger_level = max(1, room.danger_level - 1)
         
-        # Loot quality - vary based on danger level and file type
-        # Higher danger rooms have better loot potential
-        danger_bonus = room.danger_level // 3  # Add bonus for dangerous rooms
-        
-        # File type bonuses
-        file_bonus = 0
-        if entry.file_type:
-            if entry.file_type in ['py', 'js', 'ts', 'java', 'cpp', 'c', 'go', 'rs']:
-                file_bonus = 1  # Code files have better loot
-            elif entry.file_type in ['md', 'txt']:
-                file_bonus = -1  # Documentation has lower loot
-        
-        # Calculate loot with variation
-        loot_variation = random.randint(-2, 2)  # More variation
-        room.loot_quality = base_loot + danger_bonus + file_bonus + loot_variation
-        room.loot_quality = min(max(1, room.loot_quality), 6)  # Clamp between 1 and 6
+        # Loot quality - simple probabilistic distribution per dungeon
+        # 95% chance for quality 1-3 (uniform), 2.5% for 4, 2% for 5, 0.5% for 6
+        roll = random.random()
+        if roll < 0.95:
+            room.loot_quality = random.randint(1, 3)
+        elif roll < 0.975:
+            room.loot_quality = 4
+        elif roll < 0.995:
+            room.loot_quality = 5
+        else:
+            room.loot_quality = 6
         
         room.visited = False
         
