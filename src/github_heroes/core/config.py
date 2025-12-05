@@ -3,12 +3,18 @@ Configuration constants and settings for Github Heroes.
 """
 
 import sys
-from importlib.metadata import version
 from pathlib import Path
 
 # Application info
 APP_NAME = "Github Heroes"
-APP_VERSION = version("github-heroes")
+
+# Try to get version from package metadata, fallback to "dev" if not installed
+try:
+    from importlib.metadata import version
+    APP_VERSION = version("github-heroes")
+except Exception:
+    # Package not installed (development mode) or version not available
+    APP_VERSION = "dev"
 
 
 def get_resource_path(relative_path):
